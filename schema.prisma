@@ -1,0 +1,118 @@
+// ==========================================
+// Prisma Schema: グループ資金可視化システム (AI-CFO)
+// Spec Version: 0.1.0
+// ==========================================
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ------------------------------------------
+// Enums (列挙型定義)
+// ------------------------------------------
+
+enum Currency {
+  JPY
+  USD
+  EUR
+}
+
+enum TransactionStatus {
+  ACTUAL   // 実績（確定値）
+  EXPECTED // 予定（請求書・発注書ベースの予測値）
+}
+
+enum RiskLevel {
+  SAFE     // 安全
+  WARNING  // 注意（最低維持残高を下回る可能性あり）
+  CRITICAL // 危険（資金ショートの可能性高）
+}
+
+// ------------------------------------------
+// Models (テーブル定義)
+// ------------------------------------------
+
+/// 企業・子会社情報
+model Company {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(255)
+  code      String?  @unique @db.VarChar(50) // 識別コード（会計ソフトとの紐付け用）
+  parentId  String?  @map("parent_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // リレーション
+  parent       Company?       @relation("CompanyHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Company[]      @relation("CompanyHierarchy")
+  cashAccounts CashAccount[]
+  transactions Transaction[]
+  cashForecasts CashForecast[]
+
+  @@map("companies")
+}
+
+/// 口座情報
+model CashAccount {
+  id             String   @id @default(uuid()) @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  bankName       String   @map("bank_name") @db.VarChar(100)
+  branchName     String?  @map("branch_name") @db.VarChar(100)
+  accountNumber  String   @map("account_number") @db.VarChar(100) // 暗号化領域
+  accountType    String?  @map("account_type") @db.VarChar(50)    // 普通, 当座 等
+  currentBalance Decimal  @default(0) @map("current_balance") @db.Decimal(15, 2)
+  currency       Currency @default(JPY)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // リレーション
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("cash_accounts")
+}
+
+/// 取引明細・予実データ
+model Transaction {
+  id              String            @id @default(uuid()) @db.Uuid
+  companyId       String            @map("company_id") @db.Uuid
+  cashAccountId   String?           @map("cash_account_id") @db.Uuid
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  amount          Decimal           @db.Decimal(15, 2) // 正: 入金, 負: 出金
+  category        String            @db.VarChar(100)    // 勘定科目・区分（売掛回収, 買掛支払, 給与 等）
+  status          TransactionStatus @default(ACTUAL)
+  partnerName     String?           @map("partner_name") @db.VarChar(255)
+  description     String?           @db.Text
+  sourceFileId    String?           @map("source_file_id") @db.VarChar(100) // 取り込みCSVの識別ID
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  // リレーション
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  cashAccount CashAccount? @relation(fields: [cashAccountId], references: [id], onDelete: SetNull)
+
+  // インデックス（高速化）
+  @@index([companyId, transactionDate])
+  @@index([status])
+  @@map("transactions")
+}
+
+/// AI資金予測・診断結果データ
+model CashForecast {
+  id               String    @id @default(uuid()) @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  forecastDate     DateTime  @map("forecast_date") @db.Date
+  predictedBalance Decimal   @map("predicted_balance") @db.Decimal(15, 2)
+  riskLevel        RiskLevel @default(SAFE) @map("risk_level")
+  aiComment        String?   @map("ai_comment") @db.Text
+  generatedAt      DateTime  @default(now()) @map("generated_at")
+
+  // リレーション
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, forecastDate])
+  @@index([companyId, forecastDate])
+  @@map("cash_forecasts")
+}
