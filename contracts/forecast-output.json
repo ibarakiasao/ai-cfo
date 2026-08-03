@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "companyId": { "type": "string" },
+    "riskSummary": {
+      "type": "object",
+      "properties": {
+        "minimumBalance": { "type": "number" },
+        "minimumBalanceDate": { "type": "string" },
+        "overallRiskLevel": { "type": "string", "enum": ["SAFE", "WARNING", "CRITICAL"] }
+      },
+      "required": ["minimumBalance", "minimumBalanceDate", "overallRiskLevel"]
+    },
+    "forecasts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string" },
+          "predictedBalance": { "type": "number" },
+          "riskLevel": { "type": "string", "enum": ["SAFE", "WARNING", "CRITICAL"] },
+          "aiComment": { "type": "string" }
+        },
+        "required": ["date", "predictedBalance", "riskLevel"]
+      }
+    }
+  },
+  "required": ["companyId", "riskSummary", "forecasts"]
+}
